@@ -5,7 +5,6 @@
   Crea la estructura de base de datos para la aplicacion de Tickets Z fiscales argentinos.
 
   ## Tablas nuevas
-
   ### `tickets`
   Almacena cada ticket fiscal procesado:
   - `id`: UUID primario

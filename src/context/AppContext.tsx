@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import type { Ticket } from '../lib/types';
-import { mockTickets } from '../lib/mockData';
+import { supabase } from '../lib/supabase';
 
 interface AppContextValue {
   tickets: Ticket[];
@@ -17,11 +17,38 @@ interface AppContextValue {
 const AppContext = createContext<AppContextValue | null>(null);
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [tickets, setTickets] = useState<Ticket[]>(mockTickets);
+  const [tickets, setTickets] = useState<Ticket[]>([]);
   const [darkMode, setDarkMode] = useState(() => {
     return localStorage.getItem('darkMode') === 'true';
   });
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Cargar tickets de Supabase al montar
+  useEffect(() => {
+    const loadTickets = async () => {
+      try {
+        setIsLoading(true);
+        const { data, error } = await supabase
+          .from('tickets')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (error) {
+          console.error('Error cargando tickets:', error);
+          setTickets([]);
+        } else {
+          setTickets(data || []);
+        }
+      } catch (err) {
+        console.error('Error en loadTickets:', err);
+        setTickets([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadTickets();
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('darkMode', String(darkMode));
@@ -32,18 +59,67 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [darkMode]);
 
-  const addTickets = (newTickets: Ticket[]) => {
-    setTickets((prev) => [...newTickets, ...prev]);
+  const addTickets = async (newTickets: Ticket[]) => {
+    try {
+      // Preparar datos para insertar (sin id ni timestamps que genera BD)
+      const toInsert = newTickets.map(({ id, created_at, updated_at, ...rest }) => ({
+        ...rest,
+      }));
+
+      const { data, error } = await supabase
+        .from('tickets')
+        .insert(toInsert)
+        .select();
+
+      if (error) {
+        console.error('Error insertando tickets:', error);
+        // Aún así actualizar el estado local para que la app sea responsive
+        setTickets((prev) => [...newTickets, ...prev]);
+      } else if (data) {
+        // Actualizar con los datos de la BD (que incluyen id, timestamps reales)
+        setTickets((prev) => [...data, ...prev]);
+      }
+    } catch (err) {
+      console.error('Error en addTickets:', err);
+      setTickets((prev) => [...newTickets, ...prev]);
+    }
   };
 
-  const updateTicket = (id: string, updates: Partial<Ticket>) => {
-    setTickets((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, ...updates, updated_at: new Date().toISOString() } : t))
-    );
+  const updateTicket = async (id: string, updates: Partial<Ticket>) => {
+    try {
+      const { error } = await supabase
+        .from('tickets')
+        .update({ ...updates, updated_at: new Date().toISOString() })
+        .eq('id', id);
+
+      if (error) {
+        console.error('Error actualizando ticket:', error);
+      } else {
+        // Actualizar el estado local
+        setTickets((prev) =>
+          prev.map((t) => (t.id === id ? { ...t, ...updates, updated_at: new Date().toISOString() } : t))
+        );
+      }
+    } catch (err) {
+      console.error('Error en updateTicket:', err);
+    }
   };
 
-  const deleteTicket = (id: string) => {
-    setTickets((prev) => prev.filter((t) => t.id !== id));
+  const deleteTicket = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('tickets')
+        .delete()
+        .eq('id', id);
+
+      if (error) {
+        console.error('Error eliminando ticket:', error);
+      } else {
+        setTickets((prev) => prev.filter((t) => t.id !== id));
+      }
+    } catch (err) {
+      console.error('Error en deleteTicket:', err);
+    }
   };
 
   const toggleDarkMode = () => setDarkMode((v) => !v);

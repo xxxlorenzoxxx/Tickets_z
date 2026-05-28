@@ -95,7 +95,7 @@ export default function Upload({ onNavigate }: { onNavigate: (page: 'dashboard' 
     if (files.length === 0) return;
     setProcessing(true);
 
-    const results: Ticket[] = [];
+    const results: Array<Omit<Ticket, 'id' | 'created_at' | 'updated_at'>> = [];
 
     for (const entry of files) {
       setFiles((prev) =>
@@ -105,10 +105,8 @@ export default function Upload({ onNavigate }: { onNavigate: (page: 'dashboard' 
       try {
         const ocr = await processFileOCR(entry.file);
 
-        const ticket: Ticket = {
-          id: crypto.randomUUID(),
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
+        // Crear datos para insertar en Supabase (sin id ni timestamps)
+        const ticketData: Omit<Ticket, 'id' | 'created_at' | 'updated_at'> = {
           sesion_id: null,
           user_id: 'demo',
           fecha_ticket: ocr.fecha_ticket || null,
@@ -130,9 +128,17 @@ export default function Upload({ onNavigate }: { onNavigate: (page: 'dashboard' 
           notas: (ocr.confianza_ocr || 0) < 50 ? 'Baja confianza OCR - verificar manualmente' : '',
         };
 
-        results.push(ticket);
+        // Crear un ticket temporal para mostrar en la UI
+        const tempTicket: Ticket = {
+          id: crypto.randomUUID(),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          ...ticketData,
+        };
+
+        results.push(ticketData);
         setFiles((prev) =>
-          prev.map((f) => f.id === entry.id ? { ...f, status: 'done', result: ticket } : f)
+          prev.map((f) => f.id === entry.id ? { ...f, status: 'done', result: tempTicket } : f)
         );
       } catch (err) {
         setFiles((prev) =>
@@ -146,7 +152,7 @@ export default function Upload({ onNavigate }: { onNavigate: (page: 'dashboard' 
     }
 
     if (results.length > 0) {
-      addTickets(results);
+      addTickets(results as Ticket[]);
     }
 
     setProcessing(false);
