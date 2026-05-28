@@ -5,7 +5,7 @@ export interface Ticket {
   created_at: string;
   updated_at: string;
   sesion_id: string | null;
-  user_id: string;
+  user_id: string | null;
   fecha_ticket: string | null;
   numero_ticket: string;
   numero_z: string;

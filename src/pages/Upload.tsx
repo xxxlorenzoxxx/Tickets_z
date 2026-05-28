@@ -108,7 +108,7 @@ export default function Upload({ onNavigate }: { onNavigate: (page: 'dashboard' 
         // Crear datos para insertar en Supabase (sin id ni timestamps)
         const ticketData: Omit<Ticket, 'id' | 'created_at' | 'updated_at'> = {
           sesion_id: null,
-          user_id: 'demo',
+          user_id: null,
           fecha_ticket: ocr.fecha_ticket || null,
           numero_ticket: ocr.numero_ticket || '',
           numero_z: ocr.numero_z || '',
