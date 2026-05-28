@@ -12,6 +12,7 @@ Aplicación para subir y procesar tickets fiscales argentinos tipo Ticket Z. Ext
 - `lucide-react` para íconos
 - `xlsx` para exportar Excel
 - Supabase Edge Functions con Deno para el backend OCR
+- Supabase Storage para guardar imágenes originales (bucket `tickets-uploads`)
 - Anthropic Claude para OCR si está configurado
 
 ## Funcionalidades
@@ -52,7 +53,13 @@ VITE_SUPABASE_URL=<tu_supabase_url>
 VITE_SUPABASE_ANON_KEY=<tu_supabase_anon_key>
 ```
 
-3. Si querés usar OCR real con Anthropic, agrega también:
+3. Crear el bucket de Storage en Supabase:
+
+```bash
+supabase storage create-bucket tickets-uploads --public
+```
+
+4. Si querés usar OCR real con Anthropic, agrega también:
 
 ```bash
 ANTHROPIC_API_KEY=<tu_anthropic_api_key>

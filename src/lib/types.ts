@@ -66,5 +66,7 @@ export type Database = {
         Update: Partial<Omit<SesionCarga, 'id' | 'created_at'>>;
       };
     };
+    Views: {};
+    Functions: {};
   };
 };

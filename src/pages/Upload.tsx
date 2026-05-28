@@ -54,6 +54,32 @@ async function processFileOCR(file: File): Promise<OCRResult> {
   });
 }
 
+async function uploadFileToStorage(file: File): Promise<string> {
+  const bucket = 'tickets-uploads';
+  const filename = `${crypto.randomUUID()}-${file.name}`;
+  const path = `tickets/${filename}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from(bucket)
+    .upload(path, file, { cacheControl: '3600', upsert: false });
+
+  if (uploadError) {
+    console.error('Error subiendo archivo a Storage:', uploadError.message || uploadError);
+    throw uploadError;
+  }
+
+  const { data: publicUrlData, error: publicUrlError } = supabase.storage
+    .from(bucket)
+    .getPublicUrl(path);
+
+  if (publicUrlError) {
+    console.error('Error obteniendo URL pública:', publicUrlError.message || publicUrlError);
+    throw publicUrlError;
+  }
+
+  return publicUrlData.publicUrl;
+}
+
 export default function Upload({ onNavigate }: { onNavigate: (page: 'dashboard' | 'upload' | 'tickets') => void }) {
   const { addTickets } = useApp();
   const [files, setFiles] = useState<FileEntry[]>([]);
@@ -105,6 +131,14 @@ export default function Upload({ onNavigate }: { onNavigate: (page: 'dashboard' 
       try {
         const ocr = await processFileOCR(entry.file);
 
+        let imageUrl = entry.preview;
+        try {
+          imageUrl = await uploadFileToStorage(entry.file);
+        } catch (storageError) {
+          console.warn('Storage no disponible, se usará preview local:', storageError);
+          imageUrl = entry.preview;
+        }
+
         // Crear datos para insertar en Supabase (sin id ni timestamps)
         const ticketData: Omit<Ticket, 'id' | 'created_at' | 'updated_at'> = {
           sesion_id: null,
@@ -121,7 +155,7 @@ export default function Upload({ onNavigate }: { onNavigate: (page: 'dashboard' 
           iva_105: ocr.iva_105 || 0,
           otros_impuestos: ocr.otros_impuestos || 0,
           total: ocr.total || 0,
-          imagen_url: entry.preview,
+          imagen_url: imageUrl,
           estado: (ocr.confianza_ocr || 0) < 50 ? 'error' : 'procesado',
           confianza_ocr: ocr.confianza_ocr || 0,
           datos_raw: { texto_raw: ocr.texto_raw },
