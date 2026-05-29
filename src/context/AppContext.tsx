@@ -107,6 +107,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const deleteTicket = async (id: string) => {
     try {
+      const ticket = tickets.find((t) => t.id === id);
+      if (ticket?.imagen_url) {
+        try {
+          const bucket = 'tickets-uploads';
+          const publicPrefix = `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/${bucket}/`;
+          const url = new URL(ticket.imagen_url);
+          let path = '';
+
+          if (ticket.imagen_url.startsWith(publicPrefix)) {
+            path = ticket.imagen_url.replace(publicPrefix, '');
+          } else if (url.pathname.includes(`/storage/v1/object/public/${bucket}/`)) {
+            path = url.pathname.split(`/storage/v1/object/public/${bucket}/`)[1];
+          }
+
+          if (path) {
+            const { error: storageError } = await supabase.storage.from(bucket).remove([path]);
+            if (storageError) {
+              console.error('Error borrando imagen de Storage:', storageError);
+            }
+          }
+        } catch (storageErr) {
+          console.error('Error parseando imagen_url para borrar de Storage:', storageErr);
+        }
+      }
+
       const { error } = await supabase
         .from('tickets')
         .delete()

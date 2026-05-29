@@ -131,12 +131,12 @@ export default function Upload({ onNavigate }: { onNavigate: (page: 'dashboard' 
       try {
         const ocr = await processFileOCR(entry.file);
 
-        let imageUrl = entry.preview;
+        let imageUrl: string;
         try {
           imageUrl = await uploadFileToStorage(entry.file);
         } catch (storageError) {
-          console.warn('Storage no disponible, se usará preview local:', storageError);
-          imageUrl = entry.preview;
+          console.error('Error subiendo imagen a Storage:', storageError);
+          throw new Error('No se pudo subir la imagen a Storage. Revisa la consola y configura permisos del bucket.');
         }
 
         // Crear datos para insertar en Supabase (sin id ni timestamps)
