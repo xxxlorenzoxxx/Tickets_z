@@ -98,6 +98,54 @@ supabase functions deploy ocr-ticket
 - La función intenta usar la API de Anthropic Claude para extraer los datos.
 - Si no hay `ANTHROPIC_API_KEY`, la función devuelve un resultado de demo simulado para que la UI pueda probarse sin clave externa.
 
+## DER
+
+```mermaid
+erDiagram
+  AUTH_USERS ||--o{ SESIONES_CARGA : crea
+  AUTH_USERS ||--o{ TICKETS : carga
+  SESIONES_CARGA ||--o{ TICKETS : agrupa
+
+  AUTH_USERS {
+    uuid id PK
+  }
+
+  SESIONES_CARGA {
+    uuid id PK
+    timestamptz created_at
+    text nombre
+    text periodo
+    integer total_tickets
+    text estado
+    uuid user_id FK
+  }
+
+  TICKETS {
+    uuid id PK
+    timestamptz created_at
+    timestamptz updated_at
+    uuid sesion_id FK
+    uuid user_id FK
+    date fecha_ticket
+    text numero_ticket
+    text numero_z
+    text cuit
+    text razon_social
+    text tipo_comprobante
+    numeric base_neta_21
+    numeric iva_21
+    numeric base_neta_105
+    numeric iva_105
+    numeric otros_impuestos
+    numeric total
+    text imagen_url
+    text estado
+    integer confianza_ocr
+    jsonb datos_raw
+    text notas
+  }
+```
+
 ## Comandos disponibles
 
 - `npm run dev` — iniciar servidor de desarrollo
