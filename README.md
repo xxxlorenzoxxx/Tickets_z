@@ -55,8 +55,8 @@ npm install
 2. Crear un archivo `.env` o usar variables de entorno con:
 
 ```bash
-VITE_SUPABASE_URL=<tu_supabase_url>
-VITE_SUPABASE_ANON_KEY=<tu_supabase_anon_key>
+VITE_SUPABASE_URL=<https://hteerhjmfxlszdajolnz.supabase.co>
+VITE_SUPABASE_ANON_KEY=<eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh0ZWVyaGptZnhsc3pkYWpvbG56Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwMTY1OTgsImV4cCI6MjA5NDU5MjU5OH0.X201efyeE8DWwfNVLTwLR-HF8f6XGzgfH7wf6dFIt3Q>
 ```
 
 3. Crear el bucket de Storage en Supabase:
