@@ -1,8 +1,11 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+import type { Session, User } from '@supabase/supabase-js';
 import type { Ticket } from '../lib/types';
 import { supabase } from '../lib/supabase';
 
 interface AppContextValue {
+  session: Session | null;
+  user: User | null;
   tickets: Ticket[];
   setTickets: (tickets: Ticket[]) => void;
   addTickets: (tickets: Ticket[]) => void;
@@ -12,25 +15,63 @@ interface AppContextValue {
   toggleDarkMode: () => void;
   isLoading: boolean;
   setIsLoading: (v: boolean) => void;
+  isAuthLoading: boolean;
+  signIn: (email: string, password: string) => Promise<{ error?: string }>;
+  signUp: (email: string, password: string) => Promise<{ error?: string; needsConfirmation?: boolean }>;
+  signOut: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
 
 export function AppProvider({ children }: { children: ReactNode }) {
+  const [session, setSession] = useState<Session | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [darkMode, setDarkMode] = useState(() => {
     return localStorage.getItem('darkMode') === 'true';
   });
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
 
-  // Cargar tickets de Supabase al montar
+  useEffect(() => {
+    const loadSession = async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        setSession(data.session);
+      } catch (err) {
+        console.error('Error cargando sesion:', err);
+      } finally {
+        setIsAuthLoading(false);
+      }
+    };
+
+    loadSession();
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event: string, currentSession: Session | null) => {
+      setSession(currentSession);
+      if (!currentSession) {
+        setTickets([]);
+      }
+    });
+
+    return () => {
+      listener.subscription.unsubscribe();
+    };
+  }, []);
+
   useEffect(() => {
     const loadTickets = async () => {
+      if (!session?.user) {
+        setTickets([]);
+        setIsLoading(false);
+        return;
+      }
+
       try {
         setIsLoading(true);
         const { data, error } = await supabase
           .from('tickets')
           .select('*')
+          .eq('user_id', session.user.id)
           .order('created_at', { ascending: false });
 
         if (error) {
@@ -48,7 +89,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
 
     loadTickets();
-  }, []);
+  }, [session?.user]);
 
   useEffect(() => {
     localStorage.setItem('darkMode', String(darkMode));
@@ -60,10 +101,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [darkMode]);
 
   const addTickets = async (newTickets: Ticket[]) => {
+    if (!session?.user) return;
+
     try {
       // Preparar datos para insertar (sin id ni timestamps que genera BD)
       const toInsert = newTickets.map(({ id, created_at, updated_at, ...rest }) => ({
         ...rest,
+        user_id: session.user.id,
       }));
 
       const { data, error } = await supabase
@@ -86,11 +130,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const updateTicket = async (id: string, updates: Partial<Ticket>) => {
+    if (!session?.user) return;
+
     try {
       const { error } = await supabase
         .from('tickets')
         .update({ ...updates, updated_at: new Date().toISOString() })
-        .eq('id', id);
+        .eq('id', id)
+        .eq('user_id', session.user.id);
 
       if (error) {
         console.error('Error actualizando ticket:', error);
@@ -106,6 +153,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const deleteTicket = async (id: string) => {
+    if (!session?.user) return;
+
     try {
       const ticket = tickets.find((t) => t.id === id);
       if (ticket?.imagen_url) {
@@ -135,7 +184,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const { error } = await supabase
         .from('tickets')
         .delete()
-        .eq('id', id);
+        .eq('id', id)
+        .eq('user_id', session.user.id);
 
       if (error) {
         console.error('Error eliminando ticket:', error);
@@ -148,10 +198,44 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const toggleDarkMode = () => setDarkMode((v) => !v);
+  const user = session?.user ?? null;
+
+  const signIn = async (email: string, password: string) => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    return error ? { error: error.message } : {};
+  };
+
+  const signUp = async (email: string, password: string) => {
+    const { data, error } = await supabase.auth.signUp({ email, password });
+    if (error) return { error: error.message };
+    return { needsConfirmation: !data.session };
+  };
+
+  const signOut = async () => {
+    await supabase.auth.signOut();
+    setSession(null);
+    setTickets([]);
+  };
 
   return (
     <AppContext.Provider
-      value={{ tickets, setTickets, addTickets, updateTicket, deleteTicket, darkMode, toggleDarkMode, isLoading, setIsLoading }}
+      value={{
+        session,
+        user,
+        tickets,
+        setTickets,
+        addTickets,
+        updateTicket,
+        deleteTicket,
+        darkMode,
+        toggleDarkMode,
+        isLoading,
+        setIsLoading,
+        isAuthLoading,
+        signIn,
+        signUp,
+        signOut,
+      }}
     >
       {children}
     </AppContext.Provider>

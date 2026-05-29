@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { LayoutDashboard, Upload, FileSpreadsheet, Moon, Sun, Menu, X, FileText, ChevronRight } from 'lucide-react';
+import { LayoutDashboard, Upload, FileSpreadsheet, Moon, Sun, Menu, X, FileText, ChevronRight, LogOut, UserCircle } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { cn } from '../lib/utils';
 
@@ -18,8 +18,10 @@ const navItems = [
 ];
 
 export default function Layout({ children, currentPage, onNavigate }: LayoutProps) {
-  const { darkMode, toggleDarkMode } = useApp();
+  const { darkMode, toggleDarkMode, user, signOut } = useApp();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const userEmail = user?.email ?? 'Usuario';
+  const userInitial = userEmail.slice(0, 1).toUpperCase();
 
   return (
     <div className={cn('min-h-screen flex', darkMode ? 'dark' : '')}>
@@ -80,9 +82,12 @@ export default function Layout({ children, currentPage, onNavigate }: LayoutProp
 
         {/* Footer */}
         <div className="px-4 py-4 border-t border-slate-800">
-          <div className="bg-slate-800 rounded-lg px-3 py-3">
-            <p className="text-slate-300 text-xs font-medium">AFIP Ready</p>
-            <p className="text-slate-500 text-xs mt-0.5">Exportación compatible</p>
+          <div className="bg-slate-800 rounded-lg px-3 py-3 flex items-center gap-2">
+            <UserCircle className="w-4 h-4 text-slate-400 flex-shrink-0" />
+            <div className="min-w-0">
+              <p className="text-slate-300 text-xs font-medium truncate" title={userEmail}>{userEmail}</p>
+              <p className="text-slate-500 text-xs mt-0.5">Sesión iniciada</p>
+            </div>
           </div>
         </div>
       </aside>
@@ -112,8 +117,16 @@ export default function Layout({ children, currentPage, onNavigate }: LayoutProp
             {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           </button>
 
-          <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-semibold">
-            C
+          <button
+            onClick={signOut}
+            className="p-2 rounded-lg text-slate-500 hover:text-red-600 dark:text-slate-400 dark:hover:text-red-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            title="Cerrar sesión"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
+
+          <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-semibold" title={userEmail}>
+            {userInitial}
           </div>
         </header>
 

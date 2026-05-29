@@ -56,8 +56,10 @@ async function processFileOCR(file: File): Promise<OCRResult> {
 
 async function uploadFileToStorage(file: File): Promise<string> {
   const bucket = 'tickets-uploads';
+  const session = await supabase.auth.getSession();
+  const userId = session.data.session?.user.id ?? 'public';
   const filename = `${crypto.randomUUID()}-${file.name}`;
-  const path = `tickets/${filename}`;
+  const path = `tickets/${userId}/${filename}`;
 
   const { error: uploadError } = await supabase.storage
     .from(bucket)
@@ -81,7 +83,7 @@ async function uploadFileToStorage(file: File): Promise<string> {
 }
 
 export default function Upload({ onNavigate }: { onNavigate: (page: 'dashboard' | 'upload' | 'tickets') => void }) {
-  const { addTickets } = useApp();
+  const { addTickets, user } = useApp();
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [processing, setProcessing] = useState(false);
@@ -142,7 +144,7 @@ export default function Upload({ onNavigate }: { onNavigate: (page: 'dashboard' 
         // Crear datos para insertar en Supabase (sin id ni timestamps)
         const ticketData: Omit<Ticket, 'id' | 'created_at' | 'updated_at'> = {
           sesion_id: null,
-          user_id: null,
+          user_id: user?.id ?? null,
           fecha_ticket: ocr.fecha_ticket || null,
           numero_ticket: ocr.numero_ticket || '',
           numero_z: ocr.numero_z || '',
