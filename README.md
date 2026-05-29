@@ -15,6 +15,12 @@ Aplicación para subir y procesar tickets fiscales argentinos tipo Ticket Z. Ext
 - Supabase Storage para guardar imágenes originales (bucket `tickets-uploads`)
 - Anthropic Claude para OCR si está configurado
 
+## Prerrequisitos
+
+- Node.js 18+ compatible con Vite 5
+- npm o yarn
+- Supabase CLI instalado para servir y desplegar funciones edge
+
 ## Funcionalidades
 
 - Carga de tickets mediante drag & drop o selección de archivos
@@ -65,20 +71,32 @@ supabase storage create-bucket tickets-uploads --public
 ANTHROPIC_API_KEY=<tu_anthropic_api_key>
 ```
 
-4. Ejecutar en modo desarrollo:
+5. Ejecutar en modo desarrollo:
 
 ```bash
 npm run dev
 ```
 
-5. Abrir la app en el navegador en la URL que indique Vite.
+6. Abrir la app en el navegador en la URL que indique Vite.
+
+7. Opcional: servir la función edge localmente con Supabase CLI:
+
+```bash
+supabase functions serve ocr-ticket
+```
+
+8. Opcional: desplegar la función a Supabase:
+
+```bash
+supabase functions deploy ocr-ticket
+```
 
 ## Detalles del OCR
 
 - El frontend convierte la imagen a base64 y la envía a la función Supabase:
   `supabase/functions/ocr-ticket`
 - La función intenta usar la API de Anthropic Claude para extraer los datos.
-- Si no hay `ANTHROPIC_API_KEY`, devuelve un resultado de demo simulado para poder probar la UI.
+- Si no hay `ANTHROPIC_API_KEY`, la función devuelve un resultado de demo simulado para que la UI pueda probarse sin clave externa.
 
 ## Comandos disponibles
 
