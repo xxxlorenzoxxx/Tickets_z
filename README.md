@@ -2,6 +2,10 @@
 
 Sistema web para registrar, procesar y consultar tickets fiscales argentinos tipo **Ticket Z**. El proyecto fue desarrollado como trabajo práctico final de la materia **Base de Datos**, con foco en el diseño del modelo relacional, definición de entidades, relaciones, claves primarias, claves foráneas y persistencia de datos en Supabase/PostgreSQL.
 
+## Motivación del proyecto
+
+El proyecto surgió de una necesidad real: mi tío contador tenía que cargar manualmente los datos de cientos de tickets fiscales cada mes en hojas de cálculo. Era un trabajo tedioso, repetitivo y propenso a errores que le quitaba horas de trabajo. La idea fue crear un sistema que automatizara este proceso mediante OCR/IA para extraer los datos de las fotos de tickets y almacenarlos directamente en una base de datos, permitiéndole ahorrar tiempo y evitar errores de transcripción.
+
 ## Objetivo
 
 El objetivo del sistema es digitalizar la carga de tickets fiscales, extraer sus datos principales mediante OCR/IA y almacenarlos en una base de datos para su posterior consulta, edición, análisis y exportación.
@@ -45,42 +49,42 @@ erDiagram
   SESIONES_CARGA ||--o{ TICKETS : agrupa
 
   AUTH_USERS {
-    uuid id PK
+    id uuid PK
   }
 
   SESIONES_CARGA {
-    uuid id PK
-    timestamptz created_at
-    text nombre
-    text periodo
-    integer total_tickets
-    text estado
-    uuid user_id FK
+    id uuid PK
+    created_at timestamptz
+    nombre text
+    periodo text
+    total_tickets integer
+    estado text
+    user_id uuid FK
   }
 
   TICKETS {
-    uuid id PK
-    timestamptz created_at
-    timestamptz updated_at
-    uuid sesion_id FK
-    uuid user_id FK
-    date fecha_ticket
-    text numero_ticket
-    text numero_z
-    text cuit
-    text razon_social
-    text tipo_comprobante
-    numeric base_neta_21
-    numeric iva_21
-    numeric base_neta_105
-    numeric iva_105
-    numeric otros_impuestos
-    numeric total
-    text imagen_url
-    text estado
-    integer confianza_ocr
-    jsonb datos_raw
-    text notas
+    id uuid PK
+    created_at timestamptz
+    updated_at timestamptz
+    sesion_id uuid FK
+    user_id uuid FK
+    fecha_ticket date
+    numero_ticket text
+    numero_z text
+    cuit text
+    razon_social text
+    tipo_comprobante text
+    base_neta_21 numeric
+    iva_21 numeric
+    base_neta_105 numeric
+    iva_105 numeric
+    otros_impuestos numeric
+    total numeric
+    imagen_url text
+    estado text
+    confianza_ocr integer
+    datos_raw jsonb
+    notas text
   }
 ```
 

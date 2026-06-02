@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, type DragEvent, type ChangeEvent } from 'react';
-import { Upload as UploadIcon, X, FileImage, CheckCircle2, AlertCircle, Loader2, Sparkles } from 'lucide-react';
+import { Upload as UploadIcon, X, FileImage, CheckCircle2, AlertCircle, Loader2, Sparkles, AlertTriangle } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import type { Ticket, OCRResult } from '../lib/types';
 import { cn } from '../lib/utils';
@@ -88,6 +88,7 @@ export default function Upload({ onNavigate }: { onNavigate: (page: 'dashboard' 
   const [isDragging, setIsDragging] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [processed, setProcessed] = useState(false);
+  const [noApiKey, setNoApiKey] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const addFiles = useCallback((newFiles: File[]) => {
@@ -177,10 +178,14 @@ export default function Upload({ onNavigate }: { onNavigate: (page: 'dashboard' 
           prev.map((f) => f.id === entry.id ? { ...f, status: 'done', result: tempTicket } : f)
         );
       } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : 'Error';
+        if (errorMsg.includes('API key no configurada')) {
+          setNoApiKey(true);
+        }
         setFiles((prev) =>
           prev.map((f) =>
             f.id === entry.id
-              ? { ...f, status: 'error', error: err instanceof Error ? err.message : 'Error' }
+              ? { ...f, status: 'error', error: errorMsg }
               : f
           )
         );
@@ -222,6 +227,19 @@ export default function Upload({ onNavigate }: { onNavigate: (page: 'dashboard' 
           </p>
         </div>
       </div>
+
+      {/* API Key Warning */}
+      {noApiKey && (
+        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4 flex gap-3">
+          <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-amber-800 dark:text-amber-300 text-sm font-medium">API Key no configurada</p>
+            <p className="text-amber-600 dark:text-amber-400 text-xs mt-0.5">
+              El procesamiento automático con IA no está disponible. Contacta al administrador para activarlo. Mientras tanto, puedes cargar las imágenes y editar los datos manualmente.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Drop zone */}
       {!processed && (
@@ -315,9 +333,9 @@ export default function Upload({ onNavigate }: { onNavigate: (page: 'dashboard' 
                     </div>
                   )}
                   {entry.status === 'error' && (
-                    <div className="flex items-center gap-1 text-red-500" title={entry.error}>
-                      <AlertCircle className="w-4 h-4" />
-                      <span className="text-xs">Error</span>
+                    <div className="flex items-center gap-1 text-red-500 flex-1" title={entry.error}>
+                      <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                      <span className="text-xs truncate">{entry.error}</span>
                     </div>
                   )}
 
@@ -351,7 +369,7 @@ export default function Upload({ onNavigate }: { onNavigate: (page: 'dashboard' 
             </p>
             {errorCount > 0 && (
               <p className="text-amber-600 dark:text-amber-400 text-sm mt-0.5">
-                {errorCount} con errores — podés corregirlos manualmente en "Mis Tickets"
+                {errorCount} con errores — podés corregirlos manualmente en "Mis Tickets". Verificá que las imágenes sean tickets fiscales legibles.
               </p>
             )}
           </div>
@@ -364,13 +382,14 @@ export default function Upload({ onNavigate }: { onNavigate: (page: 'dashboard' 
           <>
             <button
               onClick={processAll}
-              disabled={files.length === 0 || processing}
+              disabled={files.length === 0 || processing || noApiKey}
               className={cn(
                 'flex items-center gap-2 px-6 py-2.5 rounded-lg font-semibold text-sm transition-all duration-150',
-                files.length === 0 || processing
+                files.length === 0 || processing || noApiKey
                   ? 'bg-slate-100 dark:bg-slate-700 text-slate-400 cursor-not-allowed'
                   : 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm hover:shadow-md active:scale-95'
               )}
+              title={noApiKey ? 'OCR no disponible - API key no configurada' : ''}
             >
               {processing ? (
                 <>
@@ -380,17 +399,57 @@ export default function Upload({ onNavigate }: { onNavigate: (page: 'dashboard' 
               ) : (
                 <>
                   <Sparkles className="w-4 h-4" />
-                  Procesar con IA
+                  {noApiKey ? 'OCR no disponible' : 'Procesar con IA'}
                 </>
               )}
             </button>
             {files.length > 0 && !processing && (
-              <button
-                onClick={() => inputRef.current?.click()}
-                className="px-4 py-2.5 rounded-lg font-medium text-sm text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
-              >
-                Agregar más
-              </button>
+              <>
+                <button
+                  onClick={() => inputRef.current?.click()}
+                  className="px-4 py-2.5 rounded-lg font-medium text-sm text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                >
+                  Agregar más
+                </button>
+                {noApiKey && (
+                  <button
+                    onClick={() => {
+                      // Allow manual entry - just save images without OCR
+                      const results: Array<Omit<Ticket, 'id' | 'created_at' | 'updated_at'>> = [];
+                      for (const file of files) {
+                        results.push({
+                          sesion_id: null,
+                          user_id: user?.id ?? null,
+                          fecha_ticket: null,
+                          numero_ticket: '',
+                          numero_z: '',
+                          cuit: '',
+                          razon_social: file.file.name.replace(/\.[^.]+$/, ''),
+                          tipo_comprobante: 'Ticket Z',
+                          base_neta_21: 0,
+                          iva_21: 0,
+                          base_neta_105: 0,
+                          iva_105: 0,
+                          otros_impuestos: 0,
+                          total: 0,
+                          imagen_url: '',
+                          estado: 'pendiente',
+                          confianza_ocr: 0,
+                          datos_raw: {},
+                          notas: 'Cargado sin OCR - completar datos manualmente',
+                        } as any);
+                      }
+                      if (results.length > 0) {
+                        addTickets(results as Ticket[]);
+                        setProcessed(true);
+                      }
+                    }}
+                    className="px-4 py-2.5 rounded-lg font-medium text-sm text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors"
+                  >
+                    Cargar sin OCR (manual)
+                  </button>
+                )}
+              </>
             )}
           </>
         ) : (

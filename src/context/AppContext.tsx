@@ -19,6 +19,7 @@ interface AppContextValue {
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
   signUp: (email: string, password: string) => Promise<{ error?: string; needsConfirmation?: boolean }>;
   signOut: () => Promise<void>;
+  resetPassword: (email: string) => Promise<{ error?: string; success?: boolean }>;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -217,6 +218,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setTickets([]);
   };
 
+  const resetPassword = async (email: string) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}?mode=update-password`,
+    });
+    if (error) return { error: error.message };
+    return { success: true };
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -235,6 +244,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         signIn,
         signUp,
         signOut,
+        resetPassword,
       }}
     >
       {children}
