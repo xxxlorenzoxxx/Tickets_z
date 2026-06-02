@@ -23,28 +23,57 @@ async function processFileOCR(file: File): Promise<OCRResult> {
     reader.onload = async () => {
       try {
         const base64 = (reader.result as string).split(',')[1];
-        const mimeType = file.type || 'image/jpeg';
 
-        const session = await supabase.auth.getSession();
-        const token = session.data.session?.access_token || SUPABASE_ANON_KEY;
-
-        const res = await fetch(`${SUPABASE_URL}/functions/v1/ocr-ticket`, {
+        // Llamar a LLaVA en Ollama
+        const response = await fetch('http://localhost:11434/api/generate', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-            Apikey: SUPABASE_ANON_KEY,
-          },
-          body: JSON.stringify({ imageBase64: base64, mimeType }),
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: 'llava',
+            prompt: `Analiza esta foto de un ticket fiscal argentino y extrae los datos. Devuelve SOLO un JSON válido (sin markdown, sin explicación) con esta estructura:
+{
+  "fecha_ticket": "YYYY-MM-DD o null",
+  "numero_ticket": "string o null",
+  "numero_z": "string o null",
+  "cuit": "XX-XXXXXXXX-X o null",
+  "razon_social": "string o null",
+  "tipo_comprobante": "Ticket Z o Factura",
+  "base_neta_21": number,
+  "iva_21": number,
+  "base_neta_105": number,
+  "iva_105": number,
+  "otros_impuestos": number,
+  "total": number,
+  "confianza_ocr": number entre 0-100,
+  "texto_raw": "texto completo del ticket"
+}
+Si no es un ticket fiscal válido, devuelve confianza_ocr: 0.`,
+            images: [base64],
+            stream: false
+          })
         });
 
-        if (!res.ok) {
-          const err = await res.json();
-          throw new Error(err.error || 'Error en OCR');
+        if (!response.ok) {
+          throw new Error('Error conectando a Ollama. ¿Está corriendo `ollama serve`?');
         }
 
-        const data: OCRResult = await res.json();
-        resolve(data);
+        const data = await response.json();
+        const responseText = data.response || '';
+
+        // Extraer JSON de la respuesta
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+          throw new Error('No se pudo extraer JSON de la respuesta de LLaVA');
+        }
+
+        const ocrResult: OCRResult = JSON.parse(jsonMatch[0]);
+
+        // Rechazar si no es un ticket válido
+        if (ocrResult.confianza_ocr === 0 || ocrResult.confianza_ocr < 40) {
+          throw new Error('No se detectó un ticket fiscal válido en la imagen');
+        }
+
+        resolve(ocrResult);
       } catch (err) {
         reject(err);
       }
