@@ -14,22 +14,28 @@ interface FileEntry {
   error?: string;
 }
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const OLLAMA_MODEL = 'llava:7b';
+const OLLAMA_API_URL = 'http://localhost:11434/api/generate';
+const MAX_IMAGE_SIDE = 1100;
+const JPEG_QUALITY = 0.72;
 
 async function processFileOCR(file: File): Promise<OCRResult> {
+  if (!file.type.startsWith('image/')) {
+    throw new Error('Por ahora el OCR con Ollama acepta JPG, PNG o WEBP. Converti el PDF a imagen y volve a cargarlo.');
+  }
+
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = async () => {
       try {
-        const base64 = (reader.result as string).split(',')[1];
+        const base64 = await dataUrlToOptimizedBase64(reader.result as string);
 
         // Llamar a LLaVA en Ollama
-        const response = await fetch('http://localhost:11434/api/generate', {
+        const response = await fetch(OLLAMA_API_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            model: 'llava',
+            model: OLLAMA_MODEL,
             prompt: `Analiza esta foto de un ticket fiscal argentino y extrae los datos. Devuelve SOLO un JSON válido (sin markdown, sin explicación) con esta estructura:
 {
   "fecha_ticket": "YYYY-MM-DD o null",
@@ -49,7 +55,12 @@ async function processFileOCR(file: File): Promise<OCRResult> {
 }
 Si no es un ticket fiscal válido, devuelve confianza_ocr: 0.`,
             images: [base64],
-            stream: false
+            stream: false,
+            keep_alive: '10m',
+            options: {
+              temperature: 0,
+              num_predict: 650,
+            }
           })
         });
 
@@ -58,22 +69,9 @@ Si no es un ticket fiscal válido, devuelve confianza_ocr: 0.`,
         }
 
         const data = await response.json();
-        const responseText = data.response || '';
+        const responseText = typeof data.response === 'string' ? data.response : '';
 
-        // Extraer JSON de la respuesta
-        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) {
-          throw new Error('No se pudo extraer JSON de la respuesta de LLaVA');
-        }
-
-        const ocrResult: OCRResult = JSON.parse(jsonMatch[0]);
-
-        // Rechazar si no es un ticket válido
-        if (ocrResult.confianza_ocr === 0 || ocrResult.confianza_ocr < 40) {
-          throw new Error('No se detectó un ticket fiscal válido en la imagen');
-        }
-
-        resolve(ocrResult);
+        resolve(parseOcrResponse(responseText));
       } catch (err) {
         reject(err);
       }
@@ -81,6 +79,84 @@ Si no es un ticket fiscal válido, devuelve confianza_ocr: 0.`,
     reader.onerror = () => reject(new Error('Error leyendo archivo'));
     reader.readAsDataURL(file);
   });
+}
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('No se pudo leer la imagen'));
+    image.src = src;
+  });
+}
+
+async function dataUrlToOptimizedBase64(dataUrl: string): Promise<string> {
+  const image = await loadImage(dataUrl);
+  const scale = Math.min(1, MAX_IMAGE_SIDE / Math.max(image.width, image.height));
+  const width = Math.max(1, Math.round(image.width * scale));
+  const height = Math.max(1, Math.round(image.height * scale));
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+
+  if (!context) {
+    throw new Error('No se pudo preparar la imagen para OCR');
+  }
+
+  canvas.width = width;
+  canvas.height = height;
+  context.drawImage(image, 0, 0, width, height);
+
+  return canvas.toDataURL('image/jpeg', JPEG_QUALITY).split(',')[1];
+}
+
+function parseOcrResponse(responseText: string): OCRResult {
+  const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+
+  if (!jsonMatch) {
+    throw new Error('Ollama respondio sin JSON. Proba de nuevo con una foto mas nitida.');
+  }
+
+  try {
+    const raw = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
+
+    return {
+      fecha_ticket: toOptionalString(raw.fecha_ticket),
+      numero_ticket: toOptionalString(raw.numero_ticket),
+      numero_z: toOptionalString(raw.numero_z),
+      cuit: toOptionalString(raw.cuit),
+      razon_social: toOptionalString(raw.razon_social),
+      tipo_comprobante: toOptionalString(raw.tipo_comprobante),
+      base_neta_21: toNumber(raw.base_neta_21),
+      iva_21: toNumber(raw.iva_21),
+      base_neta_105: toNumber(raw.base_neta_105),
+      iva_105: toNumber(raw.iva_105),
+      otros_impuestos: toNumber(raw.otros_impuestos),
+      total: toNumber(raw.total),
+      confianza_ocr: Math.max(0, Math.min(100, Math.round(toNumber(raw.confianza_ocr)))),
+      texto_raw: toOptionalString(raw.texto_raw),
+    };
+  } catch {
+    throw new Error('Ollama devolvio un JSON invalido. Proba de nuevo con una imagen mas clara.');
+  }
+}
+
+function toOptionalString(value: unknown): string | undefined {
+  if (value === null || value === undefined) return undefined;
+  const text = String(value).trim();
+  return text.length > 0 && text.toLowerCase() !== 'null' ? text : undefined;
+}
+
+function toNumber(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value !== 'string') return 0;
+
+  const cleaned = value.trim().replace(/[^\d,.-]/g, '');
+  const normalized = cleaned.includes(',')
+    ? cleaned.replace(/\./g, '').replace(',', '.')
+    : cleaned;
+  const parsed = Number(normalized);
+
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 async function uploadFileToStorage(file: File): Promise<string> {
@@ -121,9 +197,7 @@ export default function Upload({ onNavigate }: { onNavigate: (page: 'dashboard' 
   const inputRef = useRef<HTMLInputElement>(null);
 
   const addFiles = useCallback((newFiles: File[]) => {
-    const valid = newFiles.filter((f) =>
-      f.type.startsWith('image/') || f.type === 'application/pdf'
-    );
+    const valid = newFiles.filter((f) => f.type.startsWith('image/'));
     const entries: FileEntry[] = valid.map((file) => ({
       id: crypto.randomUUID(),
       file,
@@ -161,14 +235,26 @@ export default function Upload({ onNavigate }: { onNavigate: (page: 'dashboard' 
       );
 
       try {
-        const ocr = await processFileOCR(entry.file);
-
         let imageUrl: string;
         try {
           imageUrl = await uploadFileToStorage(entry.file);
         } catch (storageError) {
           console.error('Error subiendo imagen a Storage:', storageError);
           throw new Error('No se pudo subir la imagen a Storage. Revisa la consola y configura permisos del bucket.');
+        }
+
+        let ocr: OCRResult;
+        let ocrErrorMsg = '';
+        try {
+          ocr = await processFileOCR(entry.file);
+        } catch (ocrError) {
+          ocrErrorMsg = ocrError instanceof Error ? ocrError.message : 'OCR no disponible';
+          ocr = {
+            razon_social: entry.file.name.replace(/\.[^.]+$/, ''),
+            tipo_comprobante: 'Ticket Z',
+            confianza_ocr: 0,
+            texto_raw: ocrErrorMsg,
+          };
         }
 
         // Crear datos para insertar en Supabase (sin id ni timestamps)
@@ -188,10 +274,10 @@ export default function Upload({ onNavigate }: { onNavigate: (page: 'dashboard' 
           otros_impuestos: ocr.otros_impuestos || 0,
           total: ocr.total || 0,
           imagen_url: imageUrl,
-          estado: (ocr.confianza_ocr || 0) < 50 ? 'error' : 'procesado',
+          estado: ocrErrorMsg ? 'pendiente' : (ocr.confianza_ocr || 0) < 50 ? 'error' : 'procesado',
           confianza_ocr: ocr.confianza_ocr || 0,
           datos_raw: { texto_raw: ocr.texto_raw },
-          notas: (ocr.confianza_ocr || 0) < 50 ? 'Baja confianza OCR - verificar manualmente' : '',
+          notas: ocrErrorMsg || ((ocr.confianza_ocr || 0) < 50 ? 'Baja confianza OCR - verificar manualmente' : ''),
         };
 
         // Crear un ticket temporal para mostrar en la UI
@@ -287,7 +373,7 @@ export default function Upload({ onNavigate }: { onNavigate: (page: 'dashboard' 
           <input
             ref={inputRef}
             type="file"
-            accept="image/*,application/pdf"
+            accept="image/*"
             multiple
             className="hidden"
             onChange={onInputChange}
@@ -305,7 +391,7 @@ export default function Upload({ onNavigate }: { onNavigate: (page: 'dashboard' 
             o hacé clic para seleccionar archivos
           </p>
           <p className="text-slate-400 dark:text-slate-500 text-xs mt-3">
-            JPG, PNG, WEBP, PDF — hasta 10MB por archivo
+            JPG, PNG o WEBP - hasta 10MB por archivo
           </p>
         </div>
       )}
