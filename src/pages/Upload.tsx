@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, type DragEvent, type ChangeEvent } from 'react';
-import { Upload as UploadIcon, X, FileImage, CheckCircle2, AlertCircle, Loader2, Sparkles, AlertTriangle } from 'lucide-react';
+import { Upload as UploadIcon, X, FileImage, CheckCircle2, AlertCircle, Loader2, Sparkles } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import type { Ticket, OCRResult } from '../lib/types';
 import { cn } from '../lib/utils';
@@ -14,151 +14,98 @@ interface FileEntry {
   error?: string;
 }
 
-const OLLAMA_MODEL = 'llava:7b';
-const OLLAMA_API_URL = 'http://localhost:11434/api/generate';
-const MAX_IMAGE_SIDE = 1100;
-const JPEG_QUALITY = 0.72;
+const DEMO_TICKETS = [
+  {
+    cuit: '30-71234567-8',
+    razon_social: 'Supermercado Modelo S.A.',
+    tipo_comprobante: 'Ticket Z',
+    base_neta_21: 42150.82,
+    iva_21: 8851.67,
+    base_neta_105: 12840.5,
+    iva_105: 1348.25,
+    otros_impuestos: 659.76,
+    total: 65851,
+  },
+  {
+    cuit: '30-69874512-4',
+    razon_social: 'Autoservicio Centro SRL',
+    tipo_comprobante: 'Ticket Z',
+    base_neta_21: 18720,
+    iva_21: 3931.2,
+    base_neta_105: 7450,
+    iva_105: 782.25,
+    otros_impuestos: 316.55,
+    total: 31200,
+  },
+  {
+    cuit: '30-65432109-1',
+    razon_social: 'Farmacia Avenida',
+    tipo_comprobante: 'Ticket Z',
+    base_neta_21: 9620,
+    iva_21: 2020.2,
+    base_neta_105: 5400,
+    iva_105: 567,
+    otros_impuestos: 142.8,
+    total: 17750,
+  },
+];
 
 async function processFileOCR(file: File): Promise<OCRResult> {
   if (!file.type.startsWith('image/')) {
-    throw new Error('Por ahora el OCR con Ollama acepta JPG, PNG o WEBP. Converti el PDF a imagen y volve a cargarlo.');
+    throw new Error('El modo demo acepta imagenes JPG, PNG o WEBP.');
   }
 
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = async () => {
-      try {
-        const base64 = await dataUrlToOptimizedBase64(reader.result as string);
+  const looksLikeTicket = await looksLikeTicketImage(file);
 
-        // Llamar a LLaVA en Ollama
-        const response = await fetch(OLLAMA_API_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model: OLLAMA_MODEL,
-            prompt: `Analiza esta foto de un ticket fiscal argentino y extrae los datos. Devuelve SOLO un JSON válido (sin markdown, sin explicación) con esta estructura:
-{
-  "fecha_ticket": "YYYY-MM-DD o null",
-  "numero_ticket": "string o null",
-  "numero_z": "string o null",
-  "cuit": "XX-XXXXXXXX-X o null",
-  "razon_social": "string o null",
-  "tipo_comprobante": "Ticket Z o Factura",
-  "base_neta_21": number,
-  "iva_21": number,
-  "base_neta_105": number,
-  "iva_105": number,
-  "otros_impuestos": number,
-  "total": number,
-  "confianza_ocr": number entre 0-100,
-  "texto_raw": "texto completo del ticket"
-}
-Si no es un ticket fiscal válido, devuelve confianza_ocr: 0.`,
-            images: [base64],
-            stream: false,
-            keep_alive: '10m',
-            options: {
-              temperature: 0,
-              num_predict: 650,
-            }
-          })
-        });
+  if (!looksLikeTicket) {
+    throw new Error('No se detecto un ticket en la imagen. Cargala manualmente si corresponde.');
+  }
 
-        if (!response.ok) {
-          throw new Error('Error conectando a Ollama. ¿Está corriendo `ollama serve`?');
-        }
+  await new Promise((resolve) => window.setTimeout(resolve, 650));
 
-        const data = await response.json();
-        const responseText = typeof data.response === 'string' ? data.response : '';
+  const demo = DEMO_TICKETS[Math.abs(hashString(file.name)) % DEMO_TICKETS.length];
+  const today = new Date().toISOString().slice(0, 10);
+  const suffix = Math.abs(hashString(`${file.name}-${file.size}`)).toString().slice(0, 5).padStart(5, '0');
 
-        resolve(parseOcrResponse(responseText));
-      } catch (err) {
-        reject(err);
-      }
-    };
-    reader.onerror = () => reject(new Error('Error leyendo archivo'));
-    reader.readAsDataURL(file);
-  });
+  return {
+    ...demo,
+    fecha_ticket: today,
+    numero_ticket: `T-${suffix}`,
+    numero_z: `Z-${suffix.slice(-4)}`,
+    confianza_ocr: 92,
+    texto_raw: `Datos demo generados localmente para ${file.name}`,
+  };
 }
 
-function loadImage(src: string): Promise<HTMLImageElement> {
+async function looksLikeTicketImage(file: File): Promise<boolean> {
+  const dimensions = await getImageDimensions(file);
+  const aspectRatio = dimensions.height / dimensions.width;
+  const filename = file.name.toLowerCase();
+  const nameLooksLikeTicket = /ticket|factura|comprobante|zeta|cierre|venta|recibo/.test(filename);
+
+  return nameLooksLikeTicket || (aspectRatio >= 1.15 && aspectRatio <= 5);
+}
+
+function getImageDimensions(file: File): Promise<{ width: number; height: number }> {
   return new Promise((resolve, reject) => {
     const image = new Image();
-    image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error('No se pudo leer la imagen'));
-    image.src = src;
+    const url = URL.createObjectURL(file);
+
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve({ width: image.naturalWidth, height: image.naturalHeight });
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('No se pudo leer la imagen'));
+    };
+    image.src = url;
   });
 }
 
-async function dataUrlToOptimizedBase64(dataUrl: string): Promise<string> {
-  const image = await loadImage(dataUrl);
-  const scale = Math.min(1, MAX_IMAGE_SIDE / Math.max(image.width, image.height));
-  const width = Math.max(1, Math.round(image.width * scale));
-  const height = Math.max(1, Math.round(image.height * scale));
-  const canvas = document.createElement('canvas');
-  const context = canvas.getContext('2d');
-
-  if (!context) {
-    throw new Error('No se pudo preparar la imagen para OCR');
-  }
-
-  canvas.width = width;
-  canvas.height = height;
-  context.drawImage(image, 0, 0, width, height);
-
-  return canvas.toDataURL('image/jpeg', JPEG_QUALITY).split(',')[1];
+function hashString(value: string): number {
+  return Array.from(value).reduce((hash, char) => ((hash << 5) - hash + char.charCodeAt(0)) | 0, 0);
 }
-
-function parseOcrResponse(responseText: string): OCRResult {
-  const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-
-  if (!jsonMatch) {
-    throw new Error('Ollama respondio sin JSON. Proba de nuevo con una foto mas nitida.');
-  }
-
-  try {
-    const raw = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
-
-    return {
-      fecha_ticket: toOptionalString(raw.fecha_ticket),
-      numero_ticket: toOptionalString(raw.numero_ticket),
-      numero_z: toOptionalString(raw.numero_z),
-      cuit: toOptionalString(raw.cuit),
-      razon_social: toOptionalString(raw.razon_social),
-      tipo_comprobante: toOptionalString(raw.tipo_comprobante),
-      base_neta_21: toNumber(raw.base_neta_21),
-      iva_21: toNumber(raw.iva_21),
-      base_neta_105: toNumber(raw.base_neta_105),
-      iva_105: toNumber(raw.iva_105),
-      otros_impuestos: toNumber(raw.otros_impuestos),
-      total: toNumber(raw.total),
-      confianza_ocr: Math.max(0, Math.min(100, Math.round(toNumber(raw.confianza_ocr)))),
-      texto_raw: toOptionalString(raw.texto_raw),
-    };
-  } catch {
-    throw new Error('Ollama devolvio un JSON invalido. Proba de nuevo con una imagen mas clara.');
-  }
-}
-
-function toOptionalString(value: unknown): string | undefined {
-  if (value === null || value === undefined) return undefined;
-  const text = String(value).trim();
-  return text.length > 0 && text.toLowerCase() !== 'null' ? text : undefined;
-}
-
-function toNumber(value: unknown): number {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value !== 'string') return 0;
-
-  const cleaned = value.trim().replace(/[^\d,.-]/g, '');
-  const normalized = cleaned.includes(',')
-    ? cleaned.replace(/\./g, '').replace(',', '.')
-    : cleaned;
-  const parsed = Number(normalized);
-
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
 async function uploadFileToStorage(file: File): Promise<string> {
   const bucket = 'tickets-uploads';
   const session = await supabase.auth.getSession();
@@ -193,7 +140,6 @@ export default function Upload({ onNavigate }: { onNavigate: (page: 'dashboard' 
   const [isDragging, setIsDragging] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [processed, setProcessed] = useState(false);
-  const [noApiKey, setNoApiKey] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const addFiles = useCallback((newFiles: File[]) => {
@@ -248,7 +194,7 @@ export default function Upload({ onNavigate }: { onNavigate: (page: 'dashboard' 
         try {
           ocr = await processFileOCR(entry.file);
         } catch (ocrError) {
-          ocrErrorMsg = ocrError instanceof Error ? ocrError.message : 'OCR no disponible';
+          ocrErrorMsg = ocrError instanceof Error ? ocrError.message : 'Modo demo no pudo procesar la imagen';
           ocr = {
             razon_social: entry.file.name.replace(/\.[^.]+$/, ''),
             tipo_comprobante: 'Ticket Z',
@@ -294,9 +240,6 @@ export default function Upload({ onNavigate }: { onNavigate: (page: 'dashboard' 
         );
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : 'Error';
-        if (errorMsg.includes('API key no configurada')) {
-          setNoApiKey(true);
-        }
         setFiles((prev) =>
           prev.map((f) =>
             f.id === entry.id
@@ -328,7 +271,7 @@ export default function Upload({ onNavigate }: { onNavigate: (page: 'dashboard' 
       <div>
         <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Cargar Tickets</h2>
         <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">
-          Subí fotos o PDFs de tickets Z para extracción automática con IA
+          Subi fotos de tickets Z para carga demo editable
         </p>
       </div>
 
@@ -336,27 +279,13 @@ export default function Upload({ onNavigate }: { onNavigate: (page: 'dashboard' 
       <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4 flex gap-3">
         <Sparkles className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
         <div>
-          <p className="text-blue-800 dark:text-blue-300 text-sm font-medium">Procesamiento con IA</p>
+          <p className="text-blue-800 dark:text-blue-300 text-sm font-medium">Procesamiento demo</p>
           <p className="text-blue-600 dark:text-blue-400 text-xs mt-0.5">
-            El sistema extrae automáticamente fecha, CUIT, razón social, IVA 21%, IVA 10.5%, bases netas y totales de tickets argentinos.
+            El sistema genera datos de ejemplo editables para simular el procesamiento de tickets argentinos.
           </p>
         </div>
       </div>
-
-      {/* API Key Warning */}
-      {noApiKey && (
-        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4 flex gap-3">
-          <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="text-amber-800 dark:text-amber-300 text-sm font-medium">API Key no configurada</p>
-            <p className="text-amber-600 dark:text-amber-400 text-xs mt-0.5">
-              El procesamiento automático con IA no está disponible. Contacta al administrador para activarlo. Mientras tanto, puedes cargar las imágenes y editar los datos manualmente.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Drop zone */}
+{/* Drop zone */}
       {!processed && (
         <div
           onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
@@ -497,14 +426,13 @@ export default function Upload({ onNavigate }: { onNavigate: (page: 'dashboard' 
           <>
             <button
               onClick={processAll}
-              disabled={files.length === 0 || processing || noApiKey}
+              disabled={files.length === 0 || processing}
               className={cn(
                 'flex items-center gap-2 px-6 py-2.5 rounded-lg font-semibold text-sm transition-all duration-150',
-                files.length === 0 || processing || noApiKey
+                files.length === 0 || processing
                   ? 'bg-slate-100 dark:bg-slate-700 text-slate-400 cursor-not-allowed'
                   : 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm hover:shadow-md active:scale-95'
               )}
-              title={noApiKey ? 'OCR no disponible - API key no configurada' : ''}
             >
               {processing ? (
                 <>
@@ -514,7 +442,7 @@ export default function Upload({ onNavigate }: { onNavigate: (page: 'dashboard' 
               ) : (
                 <>
                   <Sparkles className="w-4 h-4" />
-                  {noApiKey ? 'OCR no disponible' : 'Procesar con IA'}
+                  Procesar demo
                 </>
               )}
             </button>
@@ -526,44 +454,6 @@ export default function Upload({ onNavigate }: { onNavigate: (page: 'dashboard' 
                 >
                   Agregar más
                 </button>
-                {noApiKey && (
-                  <button
-                    onClick={() => {
-                      // Allow manual entry - just save images without OCR
-                      const results: Array<Omit<Ticket, 'id' | 'created_at' | 'updated_at'>> = [];
-                      for (const file of files) {
-                        results.push({
-                          sesion_id: null,
-                          user_id: user?.id ?? null,
-                          fecha_ticket: null,
-                          numero_ticket: '',
-                          numero_z: '',
-                          cuit: '',
-                          razon_social: file.file.name.replace(/\.[^.]+$/, ''),
-                          tipo_comprobante: 'Ticket Z',
-                          base_neta_21: 0,
-                          iva_21: 0,
-                          base_neta_105: 0,
-                          iva_105: 0,
-                          otros_impuestos: 0,
-                          total: 0,
-                          imagen_url: '',
-                          estado: 'pendiente',
-                          confianza_ocr: 0,
-                          datos_raw: {},
-                          notas: 'Cargado sin OCR - completar datos manualmente',
-                        } as any);
-                      }
-                      if (results.length > 0) {
-                        addTickets(results as Ticket[]);
-                        setProcessed(true);
-                      }
-                    }}
-                    className="px-4 py-2.5 rounded-lg font-medium text-sm text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors"
-                  >
-                    Cargar sin OCR (manual)
-                  </button>
-                )}
               </>
             )}
           </>
@@ -587,3 +477,7 @@ export default function Upload({ onNavigate }: { onNavigate: (page: 'dashboard' 
     </div>
   );
 }
+
+
+
+
