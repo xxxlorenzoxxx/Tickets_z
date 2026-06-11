@@ -1,5 +1,9 @@
 # TP Final Base de Datos - Tickets Z
 
+## Sitio web
+
+https://tickets-z.netlify.app/
+
 Sistema web para registrar, procesar y consultar tickets fiscales argentinos tipo **Ticket Z**. El proyecto fue desarrollado como trabajo práctico final de la materia **Base de Datos**, con foco en el diseño del modelo relacional, definición de entidades, relaciones, claves primarias, claves foráneas y persistencia de datos en Supabase/PostgreSQL.
 
 ## Motivación del proyecto
