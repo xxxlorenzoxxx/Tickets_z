@@ -11,6 +11,11 @@ dist
 dist-ssr
 *.local
 
+# Environment variables - never commit secrets
+.env
+.env.local
+.env.*.local
+
 .vscode/*
 !.vscode/extensions.json
 .idea
